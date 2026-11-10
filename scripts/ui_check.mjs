@@ -35,7 +35,8 @@ ws.onmessage = (ev) => {
   if (m.method === "Runtime.exceptionThrown") consoleLines.push("EXCEPTION " + m.params.exceptionDetails.exception?.description);
 };
 await send("Page.enable"); await send("Runtime.enable");
-await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+const W = Number(process.env.VIEW_W || 390), H = Number(process.env.VIEW_H || 844);
+await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 2, mobile: W < 700 });
 await send("Emulation.setUserAgentOverride", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 const evalJs = async (expr) => (await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true })).result.value;
 const shot = async (name) => {
@@ -59,24 +60,35 @@ if (token) {
   await shot("2-home");
 }
 if (command) {
-  await evalJs(`(() => { const i = document.querySelector('input[placeholder="Type a command…"]');
+  await evalJs(`(() => { const i = document.querySelector('input[aria-label="Command"]');
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(command)});
     i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(200);
   await evalJs(`document.querySelector('button[aria-label="Send"]').click(); true`);
   try {
-    await waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.includes('Approve & run')) || document.body.innerText.includes('Ho gaya')`, 20000);
+    await waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.includes('Approve and run'))`, 20000);
   } catch (e) { console.log(String(e)); }
   await sleep(400);
   await shot("3-approval");
-  if (await click("Approve & run")) {
-    await waitFor(`!document.body.innerText.includes('Running on')`, 60000).catch(() => {});
+  if (await click("Approve and run")) {
+    await waitFor(`!document.body.innerText.includes('On air on')`, 60000).catch(() => {});
     await sleep(1500);
     await shot("4-done");
     await evalJs(`(() => { const rows = [...document.querySelectorAll('li button')]; rows[rows.length-1]?.click(); return true })()`);
     await sleep(600);
     await shot("5-expanded");
   }
+}
+if (process.env.EXPAND_OLDER) {
+  // open the first collapsed step of an earlier task (the latest task's content steps open themselves)
+  const ok = await evalJs(`(() => { const arts = [...document.querySelectorAll('article')];
+    for (const a of arts.slice(0, -1).reverse()) { const b = a.querySelector('li button[aria-expanded="false"]');
+      if (b) { b.click(); return true; } } return false; })()`);
+  await sleep(400);
+  await evalJs(`(() => { const b = [...document.querySelectorAll('li button[aria-expanded="true"]')][0]; b && b.closest('li').scrollIntoView({ block: 'center' }); return true })()`);
+  await sleep(500);
+  console.log("expanded older step:", ok);
+  await shot("5-expanded");
 }
 console.log("console:", consoleLines.slice(-10));
 ws.close(); chrome.kill();
