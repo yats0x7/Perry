@@ -68,11 +68,12 @@ class PerryBar(rumps.App):
         self.terminal_item = rumps.MenuItem("Allow terminal commands", callback=self.toggle_terminal)
         self.terminal_item.state = int(self.cfg.terminal_enabled)
         self.projects_menu = rumps.MenuItem("Projects")
+        self.pet_item = rumps.MenuItem("Show pet", callback=self.toggle_pet)
         self.login_item = rumps.MenuItem("Open at login", callback=self.toggle_login)
         self.login_item.state = int(LAUNCH_AGENT.exists())
         self.menu = [
             self.status_item, self.last_item, None,
-            self.pause_item, self.terminal_item, None,
+            self.pause_item, self.terminal_item, self.pet_item, None,
             self.projects_menu,
             rumps.MenuItem("Pair a phone…", callback=self.pair),
             rumps.MenuItem("Activity log", callback=self.open_log), None,
@@ -81,7 +82,29 @@ class PerryBar(rumps.App):
         ]
         self._fill_projects()
         self._start_agent()
-        rumps.Timer(self._tick, 1).start()
+        self.pet = None
+        self._pet_pref = perry_home() / "pet-visible"
+        if not self._pet_pref.exists() or self._pet_pref.read_text().strip() != "0":
+            self._show_pet()
+        rumps.Timer(self._tick, 0.5).start()
+
+    # ---- pet ------------------------------------------------------------------------------
+    def _show_pet(self) -> None:
+        if self.pet is None:
+            from .pet import PetWindow
+
+            self.pet = PetWindow(on_toggle_pause=lambda: self.toggle_pause(self.pause_item))
+        self.pet.show()
+        self.pet_item.state = 1
+        self._pet_pref.write_text("1")
+
+    def toggle_pet(self, item) -> None:
+        if self.pet is not None and self.pet.visible:
+            self.pet.hide()
+            item.state = 0
+            self._pet_pref.write_text("0")
+        else:
+            self._show_pet()
 
     # ---- agent ----------------------------------------------------------------------------
     def _start_agent(self) -> None:
@@ -102,6 +125,10 @@ class PerryBar(rumps.App):
     def _tick(self, _=None) -> None:
         if self.pairing is not None:
             self._pair_tick()
+        if self.pet is not None and self.pet.visible:
+            from .pet import derive_state
+
+            self.pet.update(derive_state(self.link))
         if self.link is None:
             self.status_item.title = "Not paired · choose “Pair a phone…”"
             self.title = None

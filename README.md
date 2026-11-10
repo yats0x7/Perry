@@ -57,7 +57,8 @@ On the Mac you want to control:
 uv run perry-agent projects add Dineo ~/code/dineo --alias dino   # tell Perry about your projects
 uv run perry-agent pair --server https://<random>.trycloudflare.com
 # scan the QR with your phone, check the 2-digit number matches, press y
-uv run perry-agent run        # or: uv run perry-menubar  (same agent with a menu-bar icon: status, pause, pairing)
+uv run perry-agent run        # or: uv run perry-menubar  (same agent with a menu-bar icon: status, pause, pairing,
+                             #      and Perry's desktop pet — a small TV set that acts out what Perry is doing)
 ```
 
 Open the same URL on your phone, tap the orb and speak. Add to Home Screen to install it.
