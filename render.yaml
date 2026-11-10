@@ -1,0 +1,18 @@
+# Render blueprint: a persistent web service (WebSockets supported) with a disk for SQLite.
+services:
+  - type: web
+    name: perry
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    disk:
+      name: perry-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: GNANI_API_KEY
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
