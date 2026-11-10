@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/pair.tsx","./src/components/sheet.tsx","./src/components/taskcard.tsx","./src/components/icons.tsx","./src/lib/api.ts","./src/lib/player.ts","./src/lib/recorder.ts","./src/lib/socket.ts","./src/lib/types.ts"],"version":"5.8.3"}
