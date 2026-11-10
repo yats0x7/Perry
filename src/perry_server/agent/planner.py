@@ -82,7 +82,11 @@ M_NEXT = W("next", "agla", "agle", "skip", "badlo", "change")
 MUSIC_VERB = W("play", "bajao", "baja", "baja do", "lagao", "laga do", "sunao", "suna do")
 M_PREV = W("previous", "pichla", "pichhla", "pehle wala", "pichle", "back")
 M_WHAT = W("kaunsa", "konsa", "kaun sa", "kon sa", "which", "what", "kya")
-SEARCH_SITE = re.compile(r"\b(google|youtube|you tube|github|wikipedia|wiki|amazon|flipkart|stack ?overflow|npm|maps|google maps)\b", re.I)
+SEARCH_SITE = re.compile(r"\b(google|youtube|you tube|github|wikipedia|wiki|amazon|flipkart|stack ?overflow|npm|maps|google maps|instagram)\b", re.I)
+ORDINALS = {"first": 1, "1st": 1, "pehla": 1, "pahla": 1, "pahala": 1, "pehli": 1, "pahli": 1, "second": 2, "2nd": 2,
+            "doosra": 2, "dusra": 2, "dusri": 2, "doosri": 2, "third": 3, "3rd": 3, "teesra": 3, "tisra": 3, "teesri": 3,
+            "fourth": 4, "4th": 4, "chautha": 4, "fifth": 5, "5th": 5}
+ORDINAL_RESULT = re.compile(r"\b(" + "|".join(ORDINALS) + r")\s+(video|videos|result|results|link|one|wala|vala|wali|gaana|song)\b", re.I)
 SEARCH_VERB = W("search", "search karo", "dhundo", "dhoondo", "dhundho", "khojo", "find", "look up", "lookup")
 B_NEW_TAB = re.compile(r"\b(new|naya|nayi|ek aur|another)\s+tab\b", re.I)
 B_TAB = re.compile(r"\btab\b", re.I)
@@ -105,22 +109,22 @@ CURRENT_SITE = re.compile(r"\b(yahan|yaha|isi|isme|is (page|site|tab|website)|is
 PLAY_IT_WORDS = {"it", "isko", "usko", "use", "wo", "woh", "pehla", "first", "video", "result", "one", "that", "ye", "yeh"}
 
 
-SEARCHABLE = {"google", "youtube", "github", "wikipedia", "amazon", "flipkart", "stackoverflow", "npm", "maps"}
+SEARCHABLE = {"google", "youtube", "github", "wikipedia", "amazon", "flipkart", "stackoverflow", "npm", "maps", "instagram"}
 
 
 def _norm_site(raw: str) -> str:
     site = raw.lower().replace(" ", "")
     return {"wiki": "wikipedia", "googlemaps": "maps", "youtube": "youtube"}.get(site, site)
-SEARCH_FILLER = set("""google youtube you tube github wikipedia wiki amazon flipkart stack overflow stackoverflow npm maps
+SEARCH_FILLER = set("""google youtube you tube github wikipedia wiki amazon flipkart stack overflow stackoverflow npm maps instagram
 pe par per pay on in mein me se ka ki ke ko search karo kar do de dijiye kijiye dhundo dhoondo dhundho khojo find look up lookup
 for please plz zara perry mera meri mere my the a chrome brave safari edge firefox browser bajao baja play chalao chala
-lagao laga sunao suna video videos dikhao open kholo khol karke kar ke and aur then phir""".split())
+lagao laga sunao suna video videos dikhao open kholo khol karke kar ke and aur then phir for from""".split())
 BROWSER_ALIASES = {"chrome": "Google Chrome", "google chrome": "Google Chrome", "brave": "Brave Browser",
                    "safari": "Safari", "edge": "Microsoft Edge", "vivaldi": "Vivaldi", "firefox": "Firefox", "arc": "Arc"}
 BROWSER_NAMES = {"Safari", "Google Chrome", "Brave Browser", "Arc", "Firefox", "Microsoft Edge", "Opera", "Vivaldi"}
 MEDIA_FILLER = set("""spotify apple music pe par on in mein me se ka ki ke ko song songs gaana gana gaane gane track geet
 bajao baja do play chalao chala lagao laga sunao suna karo kar please plz zara mera meri mere my a the koi ek wala
-wali perry chahiye hai music playlist resume continue shuru start dobara wapas wapis phir fir again do de
+wali perry chahiye hai music playlist from resume continue shuru start dobara wapas wapis phir fir again do de
 dijiye kijiye""".split())
 
 KNOWN_SITES = {
@@ -444,6 +448,17 @@ class RulePlanner(Planner):
                 browser_ctx["site"] = _norm_site(site_m.group(1))
             ctx_site = browser_ctx["site"]
             words_q = [w for w in re.findall(r"[\w'&.+#-]+", clause) if w.lower() not in SEARCH_FILLER]
+            # "play/open the first|second video/result" on the results page that is already open
+            om = ORDINAL_RESULT.search(low)
+            if om and not SEARCH_VERB.search(low):
+                n = ORDINALS[om.group(1).lower()]
+                if n == 1 and steps and steps[-1].tool == "browser.search" and steps[-1].args.get("site") == "youtube":
+                    steps[-1].args["play_first"] = True
+                    steps[-1].reason = f"Play “{steps[-1].args['query']}” on YouTube"
+                    continue
+                add("browser.open_result", {"index": n, **bargs},
+                    f"Open the {om.group(1).lower()} {om.group(2).lower()} on the open page")
+                continue
             # "...search kesariya and play it": attach "play it" to the YouTube search just planned
             if (MUSIC_VERB.search(low) or M_PLAY.search(low)) and steps and steps[-1].tool == "browser.search" \
                     and steps[-1].args.get("site") == "youtube" and all(w.lower() in PLAY_IT_WORDS for w in words_q):

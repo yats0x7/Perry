@@ -201,6 +201,9 @@ def _step_line(step: PlanStep, style: str) -> str | None:
             return f"Closed the “{c}” tab." if en else f"“{c}” tab band kar diya."
         en_l, hi_l = lines.get(act, ("Done.", "Ho gaya."))
         return (en_l if en else hi_l).format(b=b, title=title or b)
+    if t == "browser.open_result":
+        title = (o.get("title") or "").strip()[:70]
+        return (f"Opened “{title}”." if en else f"“{title}” khol diya.") if title else ("Opened it." if en else "Khol diya.")
     if t == "browser.media":
         stt = o.get("state")
         if stt == "no-media":

@@ -117,6 +117,7 @@ function StepDetail({ s }: { s: PlanStep }) {
       if (o.played) kv("playing", o.played);
       if (o.note) kv("note", o.note);
       break;
+    case "browser.open_result": kv("result", `#${o.index}`); if (o.title) kv("opened", o.title); if (o.browser) kv("browser", o.browser); break;
     case "browser.control": case "browser.media":
       kv("browser", o.browser);
       if (o.closed) kv("closed", o.closed);

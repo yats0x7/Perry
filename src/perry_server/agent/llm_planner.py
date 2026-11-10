@@ -37,6 +37,9 @@ Turn the command into an ordered list of tool calls using ONLY the tools listed.
 - reason: a short, plain English line shown to the user before approval, imperative and about their Mac
   (e.g. "Show how long the Mac has been on", "Check free disk space"); no backticks, never "the user".
 - You do not execute anything and you never decide what needs approval.
+- If the user only confirms ("yes", "haan", "ok", "kar do") and the previous assistant turn in recent_turns offered
+  a specific action, plan exactly that action.
+- "Open/play the first (second, …) video or result" on a page that is already open → browser.open_result with index.
 - If a command could mean opposite things (e.g. "sleep" vs "don't sleep"), choose the harmless reading or
   ask; never pick a disruptive action (sleep, restart, shutdown, delete) on a guess.
 - Commands come from speech recognition, which often mishears: project names become similar-sounding

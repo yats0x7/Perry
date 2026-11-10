@@ -179,6 +179,7 @@ SEARCH_SITES = {
     "stackoverflow": "https://stackoverflow.com/search?q={q}",
     "npm": "https://www.npmjs.com/search?q={q}",
     "maps": "https://www.google.com/maps/search/{q}",
+    "instagram": "https://www.instagram.com/explore/search/keyword/?q={q}",
 }
 # Fixed page scripts — the planner/LLM can never supply JavaScript.
 READ_JS = "(() => (document.body ? document.body.innerText : '').slice(0, 8000))()"
@@ -217,7 +218,7 @@ class BrowserOut(BaseModel):
     url: str | None = None
 
 
-SITE_DOMAINS = {"github.com": "github", "youtube.com": "youtube", "wikipedia.org": "wikipedia", "amazon.": "amazon",
+SITE_DOMAINS = {"github.com": "github", "youtube.com": "youtube", "instagram.com": "instagram", "wikipedia.org": "wikipedia", "amazon.": "amazon",
                 "flipkart.com": "flipkart", "stackoverflow.com": "stackoverflow", "npmjs.com": "npm",
                 "google.": "google"}
 
@@ -225,7 +226,7 @@ SITE_DOMAINS = {"github.com": "github", "youtube.com": "youtube", "wikipedia.org
 class BrowserSearchIn(BrowserIn):
     query: str = Field(min_length=1, max_length=200)
     site: Literal["google", "youtube", "github", "wikipedia", "amazon", "flipkart", "stackoverflow", "npm", "maps",
-                  "current"] = "google"
+                  "instagram", "current"] = "google"
     play_first: bool = Field(False, description="YouTube only: start the first result")
     same_tab: bool = Field(False, description="Search in the current tab instead of a new one")
 
@@ -237,6 +238,32 @@ class BrowserSearchOut(BaseModel):
     url: str
     played: str | None = Field(None, description="Title of the video started, if any (untrusted)")
     note: str | None = None
+
+
+# Open the Nth result on the search page that is already open. The index is an int from a
+# validated model, formatted into a fixed script; no other input reaches the page.
+RESULT_JS = (
+    "(() => { const n = {n}; const h = location.hostname;"
+    " let links = [];"
+    " if (h.includes('youtube.')) links = [...document.querySelectorAll('ytd-video-renderer a#video-title, ytd-rich-item-renderer a#video-title-link')];"
+    " else if (h.includes('google.')) links = [...document.querySelectorAll('#search a h3')].map(e => e.closest('a'));"
+    " else if (h.includes('github.')) links = [...document.querySelectorAll('[data-testid=\"results-list\"] h3 a, .search-title a')];"
+    " else return 'unsupported';"
+    " links = links.filter(Boolean); const a = links[n - 1];"
+    " if (!a) return links.length ? 'only ' + links.length : 'none';"
+    " const t = a.getAttribute('title') || a.textContent.trim(); a.click(); return 'ok:' + t.slice(0, 150); })()"
+)
+
+
+class OpenResultIn(BrowserIn):
+    index: int = Field(1, ge=1, le=20, description="1 = first result")
+
+
+class OpenResultOut(BaseModel):
+    browser: str
+    index: int
+    title: str | None = Field(None, description="Untrusted page text")
+    url: str | None = None
 
 
 class BrowserMediaIn(BrowserIn):
@@ -915,6 +942,28 @@ def build_registry(cfg: AgentConfig, os_: PlatformAdapter, procs: ProcessManager
                 else:
                     note = "Results are open, but no video link appeared in time."
         return BrowserSearchOut(browser=b, site=site, query=a.query.strip(), url=url, played=played, note=note)
+
+    @reg.tool("browser.open_result", title="Open a search result", risk=Risk.LOW, input_model=OpenResultIn,
+              output_model=OpenResultOut,
+              description="Open the first/second/Nth result on the YouTube, Google or GitHub results page that is "
+                          "already open in the browser (on YouTube this starts the video).")
+    async def browser_open_result(a: OpenResultIn, ctx: ToolContext):
+        b = pick_browser(a.browser)
+        js = RESULT_JS.replace("{n}", str(int(a.index)))
+        for _ in range(8):  # a search may have just opened: wait for results to render
+            r = await run_browser(b, "read", js)
+            out = r["extra"] or ""
+            if out != "none":
+                break
+            await asyncio.sleep(1.0)
+        if out == "unsupported":
+            raise ToolError("Perry can open results on YouTube, Google and GitHub search pages. Search there first.")
+        if out == "none":
+            raise ToolError("No results are visible on this page yet.")
+        if out.startswith("only "):
+            raise ToolError(f"This page shows {out[5:]} results, so there is no result {a.index}.")
+        await asyncio.sleep(1.2)
+        return OpenResultOut(browser=b, index=a.index, title=out[3:] or None, url=r["url"])
 
     @reg.tool("browser.media", title="Play/pause page video", risk=Risk.LOW, input_model=BrowserMediaIn,
               output_model=BrowserMediaOut,

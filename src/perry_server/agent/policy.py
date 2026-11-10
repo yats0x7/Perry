@@ -36,7 +36,7 @@ SERVER_RISK: dict[str, Risk] = {
     "notes.create": Risk.WRITE, "browser.tabs": Risk.READ, "system.notify": Risk.LOW,
     "media.control": Risk.LOW, "media.search": Risk.LOW, "media.play_track": Risk.LOW,
     "system.status": Risk.READ, "system.control": Risk.LOW, "system.power": Risk.EXECUTE, "terminal.run": Risk.EXECUTE,
-    "browser.control": Risk.LOW, "browser.search": Risk.LOW, "browser.media": Risk.LOW, "browser.read_page": Risk.READ,
+    "browser.control": Risk.LOW, "browser.search": Risk.LOW, "browser.media": Risk.LOW, "browser.read_page": Risk.READ, "browser.open_result": Risk.LOW,
 }
 _ORDER = [Risk.READ, Risk.LOW, Risk.WRITE, Risk.EXECUTE]
 

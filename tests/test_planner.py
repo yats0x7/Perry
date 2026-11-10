@@ -270,3 +270,24 @@ async def test_open_site_then_search(text, args, manifest):
 async def test_real_prisma_search_here(manifest):
     p = await plan("iss page per lofi search karo", manifest)  # real Prisma output for "is page pe lofi search karo"
     assert [(s.tool, s.args) for s in p.steps] == [("browser.search", {"query": "lofi", "site": "current"})]
+
+
+@pytest.mark.parametrize("text,tool,args", [
+    # real phone transcripts, 10 Nov 2026 (user's own voice through Prisma)
+    ("can you open the first video on this tab", "browser.open_result", {"index": 1}),
+    ("play the second video", "browser.open_result", {"index": 2}),
+    ("open the first video on youtube on brave browser which the tab you have already opened", "browser.open_result",
+     {"index": 1, "browser": "Brave Browser"}),
+    ("yes youtube per jo tab abhi khola hua hai uska pahala video jv k e clouds ka hai wo chala do", "browser.open_result", {"index": 1}),
+    ("play kesariya from spotify", "media.search", {"query": "kesariya"}),
+    ("search on instagram devishi", "browser.search", {"query": "devishi", "site": "instagram"}),
+])
+async def test_real_phone_transcripts_round2(text, tool, args, manifest):
+    p = await plan(text, manifest)
+    assert [(s.tool, s.args) for s in p.steps] == [(tool, args)]
+
+
+async def test_search_then_play_second_result(manifest):
+    p = await plan("search lofi on youtube and play the second video", manifest)
+    assert [(s.tool, s.args) for s in p.steps] == [
+        ("browser.search", {"query": "lofi", "site": "youtube"}), ("browser.open_result", {"index": 2})]
