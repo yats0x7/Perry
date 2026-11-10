@@ -1,9 +1,8 @@
-import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pair } from "./components/Pair";
 import { Sheet } from "./components/Sheet";
 import { TaskCard } from "./components/TaskCard";
-import { Cross, Menu, Send, Speaker, SpeakerOff, Spinner } from "./components/icons";
+import { Chevron, Cross, Mic, Send, Speaker, SpeakerOff, Stop } from "./components/icons";
 import { api, store } from "./lib/api";
 import { player } from "./lib/player";
 import { MAX_SECONDS, WavRecorder } from "./lib/recorder";
@@ -11,8 +10,8 @@ import { ClientSocket, type LinkState } from "./lib/socket";
 import { TERMINAL, type Desktop, type Health, type Task } from "./lib/types";
 
 const LANGS = [
-  { code: "en-IN", label: "Hinglish", hint: "Hindi + English, Latin script" },
-  { code: "hi-IN", label: "हिंदी", hint: "Hindi, Devanagari" },
+  { code: "en-IN", label: "Hinglish", hint: "Hindi + English" },
+  { code: "hi-IN", label: "हिंदी", hint: "Hindi" },
   { code: "en-IN", label: "English", hint: "Indian English" },
   { code: "mr-IN", label: "मराठी", hint: "Marathi" },
   { code: "ta-IN", label: "தமிழ்", hint: "Tamil" },
@@ -67,14 +66,14 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;
 
-  // The chosen computer if it still exists; otherwise the most recently connected online one.
+  // The chosen Mac if it still exists; otherwise the most recently connected online one.
   const desktop = desktops.find((d) => d.id === selected)
     ?? [...desktops].filter((d) => d.online).sort((a, b) => (b.connected_at ?? 0) - (a.connected_at ?? 0))[0]
     ?? desktops[0];
   const chooseDesktop = (id: string) => { setSelected(id); store.setPref("desktop", id); };
   const lang = LANGS[langIdx] ?? LANGS[0];
 
-  // ---- socket --------------------------------------------------------------------------
+  // ---- socket ----------------------------------------------------------------------------
   useEffect(() => {
     const s = new ClientSocket(token);
     sock.current = s;
@@ -120,20 +119,20 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
   useEffect(() => { if (notice) { const t = setTimeout(() => setNotice(null), 6000); return () => clearTimeout(t); } }, [notice]);
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (el) el.scrollTo({ top: el.scrollHeight });
   }, [tasks.length, tasks[tasks.length - 1]?.status, tasks[tasks.length - 1]?.plan?.steps.length]);
 
   const speak = useCallback((url: string) => {
     if (player.playing && player.currentUrl === url) { player.stop(); return; }
-    player.play(url).catch(() => setNotice({ kind: "info", text: "Tap ▶ on the reply to hear it (the browser blocked autoplay)." }));
+    player.play(url).catch(() => setNotice({ kind: "info", text: "Tap play on the reply to hear it; the browser blocked autoplay." }));
   }, []);
 
-  // ---- commands ------------------------------------------------------------------------
+  // ---- commands ------------------------------------------------------------------------------
   const send = useCallback((cmd: string, transcript?: Record<string, unknown>) => {
-    if (!desktop) { setNotice({ kind: "error", text: "No computer paired." }); return; }
-    if (!desktop.online) { setNotice({ kind: "error", text: `${desktop.name} is offline. Start \`perry-agent run\` on it.` }); return; }
+    if (!desktop) { setNotice({ kind: "error", text: "No Mac is paired yet." }); return; }
+    if (!desktop.online) { setNotice({ kind: "error", text: `${desktop.name} is offline. Start Perry on it: perry-agent run` }); return; }
     if (!sock.current?.send({ type: "command", desktop_id: desktop.id, text: cmd, transcript })) {
-      setNotice({ kind: "error", text: "Not connected to the Perry server. Reconnecting…" });
+      setNotice({ kind: "error", text: "Not connected to Perry. Reconnecting…" });
     }
   }, [desktop]);
 
@@ -148,8 +147,8 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
   const startListening = async () => {
     player.unlock();
     player.stop();
-    if (!WavRecorder.supported()) { setNotice({ kind: "error", text: "This browser can't record audio. Type your command instead." }); return; }
-    if (!window.isSecureContext) { setNotice({ kind: "error", text: "Microphone needs HTTPS. Open Perry over https://" }); return; }
+    if (!WavRecorder.supported()) { setNotice({ kind: "error", text: "This browser can’t record audio. Type the command instead." }); return; }
+    if (!window.isSecureContext) { setNotice({ kind: "error", text: "The microphone needs HTTPS. Open Perry over https://" }); return; }
     const r = new WavRecorder();
     r.onLevel = setLevel;
     r.onAutoStop = () => stopListening();
@@ -159,6 +158,7 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
       setVoice("listening");
       setSecs(0);
     } catch (e: any) {
+      rec.current = null;
       setNotice({ kind: "error", text: e?.name === "NotAllowedError" ? "Microphone permission was denied." : `Microphone error: ${e?.message ?? e}` });
     }
   };
@@ -169,7 +169,7 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
     rec.current = null;
     const dur = r.seconds;
     const wav = await r.stop();
-    if (dur < 0.6) { setVoice("idle"); setNotice({ kind: "info", text: "Tap the orb, speak, then tap again to send." }); return; }
+    if (dur < 0.6) { setVoice("idle"); setNotice({ kind: "info", text: "Tap the mic, speak, then tap again to send." }); return; }
     setVoice("transcribing");
     try {
       const fd = new FormData();
@@ -177,7 +177,7 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
       fd.append("language", lang.code);
       if (desktop) fd.append("desktop_id", desktop.id);
       const r2 = await api<{ text: string; model: string; language: string; request_id: string; latency_ms: number }>("/api/stt", { method: "POST", body: fd });
-      if (!r2.text) { setNotice({ kind: "info", text: "Prisma didn't hear any speech. Try again a bit closer to the mic." }); return; }
+      if (!r2.text) { setNotice({ kind: "info", text: "No speech was heard. Try again a little closer to the phone." }); return; }
       send(r2.text, { model: r2.model, language: r2.language, request_id: r2.request_id, latency_ms: r2.latency_ms });
     } catch (e: any) {
       setNotice({ kind: "error", text: `Speech recognition failed: ${e.message}` });
@@ -194,164 +194,160 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
     return () => clearInterval(t);
   }, [voice]);
 
-  const onOrb = () => (voice === "listening" ? stopListening() : voice === "idle" ? startListening() : undefined);
-
-  // ---- derived state -----------------------------------------------------------------------
+  // ---- derived state ----------------------------------------------------------------------------
   const active = [...tasks].reverse().find((t) => !TERMINAL.includes(t.status));
-  const last = tasks[tasks.length - 1];
   const offline = link !== "open" || !desktop?.online;
-  const state = useMemo(() => {
-    if (link !== "open") return { key: "disconnected", label: link === "connecting" ? "Connecting to Perry…" : "Reconnecting…" };
-    if (!desktop) return { key: "disconnected", label: "No computer paired" };
-    if (!desktop.online) return { key: "disconnected", label: `${desktop.name} is offline` };
-    if (voice === "listening") return { key: "listening", label: `Listening · ${secs.toFixed(0)}s / ${MAX_SECONDS}s — tap to send` };
-    if (voice === "transcribing") return { key: "transcribing", label: "Transcribing with Gnani Prisma" };
-    if (active) {
-      const m: Record<string, string> = {
-        thinking: "Thinking", planning: "Planning", awaiting_approval: "Waiting for your approval",
-        executing: `Running on ${desktop.name}`, responding: "Writing reply",
-      };
-      return { key: active.status, label: m[active.status] ?? "Working" };
-    }
-    if (speakingUrl) return { key: "speaking", label: "Speaking · Gnani Timbre" };
-    if (last && Date.now() / 1000 - last.updated_at < 8) {
-      if (last.status === "completed") return { key: "completed", label: "Done" };
-      if (last.status === "failed") return { key: "error", label: "Something went wrong" };
-    }
-    return { key: "idle", label: "Tap the orb and speak" };
-  }, [link, desktop, voice, secs, active, speakingUrl, last]);
-
-  const orbState = offline ? "offline" : voice === "listening" ? "listening"
-    : (voice === "transcribing" || (active && active.status !== "awaiting_approval") || speakingUrl) ? "busy" : "idle";
+  const status = useMemo(() => {
+    if (link !== "open") return { tone: "haze", text: link === "connecting" ? "Connecting to Perry…" : "Reconnecting to Perry…" };
+    if (!desktop) return { tone: "haze", text: "No Mac paired" };
+    if (!desktop.online) return { tone: "haze", text: `${desktop.name} is offline` };
+    if (voice === "listening") return { tone: "tally", text: `Listening · ${secs.toFixed(0)} of ${MAX_SECONDS} s · tap to send` };
+    if (voice === "transcribing") return { tone: "ivory", text: "Writing down what you said…" };
+    if (active?.status === "awaiting_approval") return { tone: "saffron", text: "Waiting for your approval" };
+    if (active) return { tone: "saffron", text: `On air on ${desktop.name}` };
+    if (speakingUrl) return { tone: "onair", text: "Speaking the reply" };
+    return { tone: "onair", text: `Ready · ${desktop.name}` };
+  }, [link, desktop, voice, secs, active, speakingUrl]);
 
   const examples = useMemo(() => {
     const p = desktop?.projects[0]?.name;
     return [
-      p ? `${p} project kholo, git status check karo aur dev server start karo` : "Chrome kholo",
-      p ? `${p} mein koi errors aa rahe hain kya?` : "YouTube kholo",
-      "Brave mein YouTube pe Kesariya bajao",
+      p ? `${p} project kholo, git status check karo aur dev server start karo` : "Chrome mein YouTube kholo",
       "Spotify pe gaana resume karo",
+      "Mac ko sone mat do",
+      "Battery kitni hai?",
     ];
   }, [desktop]);
 
   const setVoiceOn = (v: boolean) => { setVoiceOnState(v); store.setPref("voice", v ? "1" : "0"); if (!v) player.stop(); };
+  const toneCls: Record<string, string> = { haze: "bg-haze", tally: "bg-tally", saffron: "bg-saffron", onair: "bg-onair", ivory: "bg-ivory" };
 
   return (
-    <div className="app-bg flex h-[100dvh] flex-col">
-      {/* header */}
-      <header className="safe-top z-20 flex items-center justify-between px-5 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="orb relative h-[18px] w-[18px]" data-state={orbState === "offline" ? "offline" : "idle"} />
-          <span className="text-[17px] font-semibold tracking-[-0.01em]">Perry</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setVoiceOn(!voiceOn)} aria-label={voiceOn ? "Mute voice replies" : "Unmute voice replies"}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-dim">
-            {voiceOn ? <Speaker /> : <SpeakerOff />}
-          </button>
-          <button onClick={() => setSheet(true)}
-            className="flex items-center gap-2 rounded-full border border-line bg-panel/70 py-1.5 pl-3 pr-2.5 text-[13px]">
-            <span className={`h-2 w-2 rounded-full ${desktop?.online && link === "open" ? "bg-ok shadow-[0_0_8px_rgb(111_211_154/0.6)]" : "bg-mute"}`} />
-            <span className="max-w-[9.5rem] truncate">{desktop?.name ?? "No computer"}</span>
-            <Menu width={15} height={15} className="text-dim" />
-          </button>
+    <div className="studio flex h-[100dvh] flex-col">
+      {/* masthead */}
+      <header className="safe-top z-20 border-b border-rule">
+        <div className="mx-auto flex w-full max-w-xl items-center justify-between px-5 pb-3">
+          <span className="text-[19px] font-extrabold tracking-[0.18em]">PERRY</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setVoiceOn(!voiceOn)} aria-label={voiceOn ? "Mute spoken replies" : "Turn spoken replies on"}
+              className="grid h-10 w-10 place-items-center text-mist">
+              {voiceOn ? <Speaker /> : <SpeakerOff />}
+            </button>
+            <button onClick={() => setSheet(true)} aria-label="Macs, activity and settings"
+              className="flex min-h-10 items-center gap-2 pl-2 text-[15px] font-medium">
+              <span className={`h-2 w-2 ${desktop?.online && link === "open" ? "bg-onair" : "bg-haze"}`} aria-hidden />
+              <span className="max-w-[11rem] truncate">{desktop?.name ?? "No Mac"}</span>
+              <Chevron width={14} height={14} className="rotate-90 text-haze" />
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* timeline */}
-      <main ref={scroller} className="scroll-fade no-scrollbar flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-xl space-y-6 px-4 pb-6 pt-2">
+      {/* bulletin */}
+      <main ref={scroller} className="thin-scroll flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-xl px-5 pb-8 pt-5">
           {tasks.length === 0 ? (
-            <div className="flex min-h-[52dvh] flex-col justify-end pb-4">
-              <h2 className="text-[26px] font-semibold leading-tight tracking-[-0.02em]">Namaste.<br /><span className="text-dim">Kya karna hai?</span></h2>
-              <p className="mt-3 max-w-sm text-[14.5px] leading-relaxed text-dim">
-                Speak in Hinglish, Hindi or English. Perry plans the steps, asks before running anything consequential, and
-                does it on {desktop?.name ?? "your computer"}.
+            <div className="cut-in pt-6">
+              <h1 className="text-[19px] font-extrabold leading-[1.3]">Bolo, kya karna hai.</h1>
+              <p className="mt-3 max-w-sm text-[15px] leading-snug text-mist">
+                Say it in Hinglish, Hindi or English. Perry shows the plan, asks before anything that runs, then does it on {desktop?.name ?? "your Mac"}.
               </p>
-              <div className="mt-6 flex flex-col items-start gap-2">
+              <ul className="mt-7 border-t-2 border-ivory">
                 {examples.map((e) => (
-                  <button key={e} onClick={() => setText(e)}
-                    className="rounded-full border border-line bg-panel/70 px-3.5 py-2 text-left text-[13.5px] text-fg/85 active:bg-raised">
-                    “{e}”
-                  </button>
+                  <li key={e} className="border-b border-rule">
+                    <button onClick={() => setText(e)} className="flex w-full items-center justify-between gap-3 py-3.5 text-left text-[15px]">
+                      <span>{e}</span>
+                      <Chevron width={14} height={14} className="shrink-0 text-haze" />
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           ) : (
-            tasks.map((t) => (
-              <TaskCard key={t.id} task={t} desktop={desktops.find((d) => d.id === t.desktop_id)}
-                speakingUrl={speakingUrl}
-                onSpeak={(u) => { player.unlock(); speak(u); }}
-                onApprove={() => { player.unlock(); sock.current?.send({ type: "approve", task_id: t.id, digest: t.plan_digest }); }}
-                onReject={() => sock.current?.send({ type: "reject", task_id: t.id })}
-                onCancel={() => sock.current?.send({ type: "cancel", task_id: t.id })} />
-            ))
+            <div className="space-y-10">
+              {tasks.map((t, i) => (
+                <TaskCard key={t.id} task={t} latest={i === tasks.length - 1} desktop={desktops.find((d) => d.id === t.desktop_id)}
+                  speakingUrl={speakingUrl}
+                  onSpeak={(u) => { player.unlock(); speak(u); }}
+                  onApprove={() => { player.unlock(); sock.current?.send({ type: "approve", task_id: t.id, digest: t.plan_digest }); }}
+                  onReject={() => sock.current?.send({ type: "reject", task_id: t.id })}
+                  onCancel={() => sock.current?.send({ type: "cancel", task_id: t.id })} />
+              ))}
+            </div>
+          )}
+          {offline && link === "open" && desktop && (
+            <div className="cut-in -mx-5 mt-10 bg-ivory px-5 pb-5 pt-4 text-ink">
+              <p className="text-[19px] font-extrabold leading-tight" lang="hi">रुकावट के लिए खेद है</p>
+              <p className="mt-1 text-[15px] font-semibold">Rukavat ke liye khed hai. {desktop.name} is off air.</p>
+              <p className="mt-2 text-[15px] leading-snug">Start Perry on the Mac and it reconnects by itself:</p>
+              <pre className="mt-2 overflow-x-auto bg-studio px-3 py-2.5 font-mono text-[14px] text-ivory">uv run perry-agent run</pre>
+            </div>
           )}
         </div>
       </main>
 
-      {/* dock */}
-      <footer className="glass safe-bottom z-20 border-t border-line">
-        <div className="mx-auto w-full max-w-xl px-4 pt-3">
-          <AnimatePresence>
-            {notice && (
-              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className={`mb-2.5 rounded-xl px-3.5 py-2.5 text-[13px] leading-snug ${notice.kind === "error" ? "bg-bad/10 text-bad" : "bg-white/5 text-dim"}`}
-                onClick={() => setNotice(null)}>
-                {notice.text}
-              </motion.div>
-            )}
-          </AnimatePresence>
+      {/* control desk */}
+      <footer className="safe-bottom z-20 bg-studio-deep">
+        <div className="mx-auto w-full max-w-xl px-5 pt-3">
+          {notice && (
+            <button onClick={() => setNotice(null)}
+              className={`cut-in mb-3 block w-full px-3.5 py-2.5 text-left text-[15px] leading-snug ${notice.kind === "error" ? "bg-fault/15 text-fault" : "bg-studio-lift text-ivory"}`}>
+              {notice.text}
+            </button>
+          )}
 
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2 text-[13px]" aria-live="polite">
-              {(state.key === "transcribing" || state.key === "thinking" || state.key === "planning" || state.key === "executing" || state.key === "responding")
-                ? <Spinner width={14} height={14} className="text-ember" />
-                : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${state.key === "disconnected" ? "bg-mute" : state.key === "error" ? "bg-bad" : state.key === "awaiting_approval" ? "bg-warn" : state.key === "listening" ? "bg-ember" : "bg-ok"}`} />}
-              <span className={`truncate ${state.key === "error" ? "text-bad" : "text-dim"}`}>{state.label}</span>
-            </div>
+            <p className="flex min-w-0 items-center gap-2 text-[15px]" aria-live="polite">
+              <span className={`h-2 w-2 shrink-0 ${toneCls[status.tone]} ${status.tone === "saffron" || status.tone === "tally" || status.tone === "ivory" ? "tally-blink" : ""}`} aria-hidden />
+              <span className="truncate text-mist">{status.text}</span>
+            </p>
             <div className="relative">
-              <button onClick={() => setLangOpen(!langOpen)} className="rounded-full border border-line px-2.5 py-1 text-[12px] text-dim">
+              <button onClick={() => setLangOpen(!langOpen)} aria-expanded={langOpen} aria-label={`Speech language: ${lang.label}`}
+                className="flex items-center gap-1 border border-rule-strong px-2.5 py-1 text-[15px] font-semibold">
                 {lang.label}
+                <Chevron width={12} height={12} className="-rotate-90 text-haze" />
               </button>
-              <AnimatePresence>
-                {langOpen && (
-                  <motion.ul initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                    className="absolute bottom-9 right-0 z-30 w-56 overflow-hidden rounded-2xl border border-line bg-raised py-1 shadow-2xl">
-                    {LANGS.map((l, i) => (
-                      <li key={l.label}>
-                        <button onClick={() => { setLangIdx(i); store.setPref("lang", String(i)); setLangOpen(false); }}
-                          className={`flex w-full items-baseline justify-between px-3.5 py-2 text-left ${i === langIdx ? "text-ember" : "text-fg"}`}>
-                          <span className="text-[14px]">{l.label}</span><span className="text-[11px] text-mute">{l.hint}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </motion.ul>
-                )}
-              </AnimatePresence>
+              {langOpen && (
+                <ul className="cut-in absolute bottom-10 right-0 z-30 w-56 border-t-2 border-ivory bg-studio-lift py-1">
+                  {LANGS.map((l, i) => (
+                    <li key={l.label}>
+                      <button onClick={() => { setLangIdx(i); store.setPref("lang", String(i)); setLangOpen(false); }}
+                        className={`flex w-full items-baseline justify-between px-3.5 py-2.5 text-left ${i === langIdx ? "bg-ivory text-ink font-bold" : ""}`}>
+                        <span className="text-[15px]">{l.label}</span><span className="text-[15px] text-haze">{l.hint}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pb-1">
+          <div className="flex items-center gap-3.5 pb-2">
             {voice === "listening" ? (
-              <div className="flex h-12 flex-1 items-center gap-3 rounded-2xl border border-ember/30 bg-ember/[0.06] px-3">
-                <button onClick={cancelListening} aria-label="Cancel recording" className="flex h-8 w-8 items-center justify-center rounded-full text-dim"><Cross /></button>
-                <Bars level={level} />
+              <div className="flex h-[52px] flex-1 items-center gap-3 border border-tally/60 px-2">
+                <button onClick={cancelListening} aria-label="Cancel recording" className="grid h-10 w-10 place-items-center text-mist"><Cross /></button>
+                <Levels level={level} />
               </div>
             ) : (
-              <form className="flex h-12 flex-1 items-center rounded-2xl border border-line-strong bg-panel pl-4 pr-1.5 focus-within:border-ember/50"
+              <form className="flex h-[52px] flex-1 items-center border border-rule-strong bg-studio pl-3.5 pr-1 focus-within:border-ivory"
                 onSubmit={(e) => { e.preventDefault(); submitText(); }}>
-                <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a command…" enterKeyHint="send"
-                  className="h-full min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-mute" />
+                <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a command" enterKeyHint="send"
+                  aria-label="Command" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-haze" />
                 {text.trim() && (
-                  <button type="submit" aria-label="Send" className="flex h-9 w-9 items-center justify-center rounded-xl bg-ember text-ink"><Send /></button>
+                  <button type="submit" aria-label="Send" className="grid h-10 w-10 place-items-center bg-ivory text-ink"><Send /></button>
                 )}
               </form>
             )}
-            <button onClick={onOrb} disabled={voice === "transcribing" || offline} aria-label={voice === "listening" ? "Stop and send" : "Speak a command"}
-              className="relative h-14 w-14 shrink-0 disabled:cursor-not-allowed">
-              <span className="orb-ring" data-active={voice === "listening"} />
-              <span className="orb absolute inset-0" data-state={orbState} style={{ ["--level" as any]: level }} />
+            <button
+              onClick={() => (voice === "listening" ? stopListening() : voice === "idle" ? startListening() : undefined)}
+              disabled={voice === "transcribing" || offline}
+              aria-label={voice === "listening" ? "Stop and send" : "Speak a command"}
+              className={`grid h-[66px] w-[66px] shrink-0 place-items-center rounded-full disabled:bg-studio-lift disabled:text-haze ${
+                voice === "listening" ? "mic-ring bg-tally text-ivory" : "bg-ivory text-ink"
+              }`}
+              style={{ ["--level" as string]: level }}
+            >
+              {voice === "listening" ? <Stop width={24} height={24} /> : <Mic width={26} height={26} strokeWidth={2} />}
             </button>
           </div>
         </div>
@@ -369,13 +365,14 @@ function Console({ token, onSignedOut, onPairAnother }: { token: string; onSigne
   );
 }
 
-function Bars({ level }: { level: number }) {
-  const hist = useRef<number[]>(Array(28).fill(0));
+/** A level meter in hard-stepped bars, like a studio VU strip. */
+function Levels({ level }: { level: number }) {
+  const hist = useRef<number[]>(Array(26).fill(0));
   hist.current = [...hist.current.slice(1), level];
   return (
-    <div className="flex h-8 flex-1 items-center gap-[3px] overflow-hidden">
+    <div className="flex h-8 flex-1 items-end gap-[3px] overflow-hidden" aria-hidden>
       {hist.current.map((v, i) => (
-        <span key={i} className="w-[3px] rounded-full bg-ember/80" style={{ height: `${Math.max(3, v * 30)}px`, opacity: 0.35 + (i / 28) * 0.65 }} />
+        <span key={i} className="w-[4px] bg-tally" style={{ height: `${Math.max(2, Math.round(v * 8) * 4)}px`, opacity: 0.4 + (i / 26) * 0.6 }} />
       ))}
     </div>
   );

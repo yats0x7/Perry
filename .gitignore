@@ -11,3 +11,5 @@ web/dist/
 .pytest_cache/
 .DS_Store
 *.log
+.impeccable/
+PRODUCT.md

@@ -1,6 +1,6 @@
 // Minimal app-shell service worker: makes Perry installable and opens instantly.
 // API calls, WebSockets and audio are never cached.
-const CACHE = "perry-shell-v1";
+const CACHE = "perry-shell-v2";
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));
   self.skipWaiting();

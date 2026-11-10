@@ -1,8 +1,7 @@
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Desktop, Health } from "../lib/types";
-import { Cross, Laptop } from "./icons";
+import { Cross } from "./icons";
 
 function ago(ts?: number | null): string {
   if (!ts) return "never";
@@ -12,6 +11,8 @@ function ago(ts?: number | null): string {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86400)} d ago`;
 }
+
+type Tab = "devices" | "activity" | "about";
 
 export function Sheet({ open, onClose, desktops, health, voiceOn, setVoiceOn, onRevoke, onSignOut, onPairAnother, currentId, onChoose }: {
   open: boolean;
@@ -26,7 +27,7 @@ export function Sheet({ open, onClose, desktops, health, voiceOn, setVoiceOn, on
   onSignOut: () => void;
   onPairAnother: () => void;
 }) {
-  const [tab, setTab] = useState<"devices" | "activity">("devices");
+  const [tab, setTab] = useState<Tab>("devices");
   const [events, setEvents] = useState<any[] | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
 
@@ -37,122 +38,140 @@ export function Sheet({ open, onClose, desktops, health, voiceOn, setVoiceOn, on
     }
   }, [open, tab]);
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div className="fixed inset-0 z-40 bg-black/55" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
-          <motion.section
-            role="dialog" aria-label="Devices and settings"
-            className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[86dvh] max-w-xl overflow-hidden rounded-t-3xl border border-line bg-panel safe-bottom"
-            initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 32, stiffness: 340 }}
-          >
-            <div className="flex items-center justify-between px-5 pb-2 pt-4">
-              <div className="flex gap-1 rounded-full bg-ink/60 p-1 text-[13px]">
-                {(["devices", "activity"] as const).map((t) => (
-                  <button key={t} onClick={() => setTab(t)}
-                    className={`rounded-full px-3.5 py-1.5 capitalize ${tab === t ? "bg-raised text-fg" : "text-dim"}`}>{t}</button>
-                ))}
-              </div>
-              <button onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full text-dim"><Cross /></button>
-            </div>
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
-            <div className="no-scrollbar max-h-[72dvh] overflow-y-auto px-5 pb-6">
-              {tab === "devices" ? (
-                <div className="space-y-6 pt-2">
-                  <div className="space-y-2.5">
-                    {desktops.map((d) => (
-                      <div key={d.id} className="rounded-2xl border border-line bg-raised/60 p-4">
-                        <div className="flex items-start gap-3">
-                          <Laptop className="mt-0.5 text-dim" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate text-[15px] font-medium">{d.name}</span>
-                              <span className={`h-1.5 w-1.5 rounded-full ${d.online ? "bg-ok" : "bg-mute"}`} />
-                              <span className="text-[12px] text-dim">{d.online ? "Online" : `Offline · ${ago(d.last_seen_at)}`}</span>
-                              {d.id === currentId && <span className="rounded-full bg-ember/15 px-2 py-0.5 text-[11px] font-medium text-ember">In use</span>}
-                            </div>
-                            <div className="mt-1 text-[12.5px] text-dim">
-                              {d.platform === "macos" ? "macOS" : d.platform}{d.platform_version ? ` ${d.platform_version}` : ""}
-                              {d.platform_supported === false && " · automation not implemented on this OS yet"}
-                              {" · "}{d.tools.length} tools · {d.projects.length} project{d.projects.length === 1 ? "" : "s"}
-                              {desktops.filter((x) => x.name === d.name).length > 1 && d.paired_at
-                                ? ` · paired ${new Date(d.paired_at * 1000).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
-                                : ""}
-                            </div>
-                            {d.projects.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {d.projects.map((p) => <span key={p.id} className="rounded-md bg-ink/70 px-2 py-0.5 font-mono text-[11px] text-dim">{p.name}</span>)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="mt-3 flex items-center justify-between">
-                          {d.id !== currentId ? (
-                            <button onClick={() => onChoose(d.id)} className="rounded-lg border border-line-strong px-3 py-1.5 text-[13px] text-fg">
-                              Use this computer
-                            </button>
-                          ) : <span />}
-                          {confirm === d.id ? (
-                            <div className="flex items-center gap-2 text-[13px]">
-                              <span className="text-dim">Remove access?</span>
-                              <button onClick={() => setConfirm(null)} className="rounded-lg px-3 py-1.5 text-dim">Keep</button>
-                              <button onClick={() => { onRevoke(d.id); setConfirm(null); }} className="rounded-lg bg-bad/15 px-3 py-1.5 font-medium text-bad">Revoke</button>
-                            </div>
-                          ) : (
-                            <button onClick={() => setConfirm(d.id)} className="rounded-lg px-3 py-1.5 text-[13px] text-bad/90">Revoke device</button>
+  if (!open) return null;
+  return (
+    <>
+      <div className="cut-in fixed inset-0 z-40 bg-[#040b1c]/70" onClick={onClose} />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Devices, activity and settings"
+        className="sheet-in fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] max-w-xl flex-col border-t-2 border-ivory bg-studio-deep safe-bottom"
+      >
+        <div className="flex items-end justify-between px-5 pt-3">
+          <div role="tablist" className="flex gap-5">
+            {(["devices", "activity", "about"] as const).map((t) => (
+              <button
+                key={t}
+                role="tab"
+                aria-selected={tab === t}
+                onClick={() => setTab(t)}
+                className={`border-b-2 pb-2 pt-1 text-[15px] font-semibold capitalize ${tab === t ? "border-ivory text-ivory" : "border-transparent text-haze"}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <button onClick={onClose} aria-label="Close" className="mb-1 grid h-9 w-9 place-items-center text-mist"><Cross /></button>
+        </div>
+        <div className="border-t border-rule" />
+
+        <div className="thin-scroll flex-1 overflow-y-auto px-5 pb-6">
+          {tab === "devices" && (
+            <div className="pt-1">
+              <ul>
+                {desktops.map((d) => {
+                  const twins = desktops.filter((x) => x.name === d.name).length > 1;
+                  return (
+                    <li key={d.id} className="border-b border-rule py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-2 text-[19px] font-semibold">
+                            <span className={`h-2 w-2 shrink-0 ${d.online ? "bg-onair" : "bg-haze"}`} aria-hidden />
+                            <span className="truncate">{d.name}</span>
+                          </p>
+                          <p className="mt-0.5 text-[15px] text-mist">
+                            {d.online ? "On air" : `Offline · ${ago(d.last_seen_at)}`}
+                            {" · "}{d.platform === "macos" ? "macOS" : d.platform}{d.platform_version ? ` ${d.platform_version}` : ""}
+                            {d.platform_supported === false && " · not supported yet"}
+                          </p>
+                          <p className="mt-0.5 text-[15px] text-haze">
+                            {d.tools.length} tools · {d.projects.length} project{d.projects.length === 1 ? "" : "s"}
+                            {twins && d.paired_at ? ` · paired ${new Date(d.paired_at * 1000).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
+                          </p>
+                          {d.projects.length > 0 && (
+                            <p className="mt-1.5 text-[15px]">{d.projects.map((p) => p.name).join(" · ")}</p>
                           )}
                         </div>
+                        {d.id === currentId && <span className="slug shrink-0 bg-ivory px-2 py-1 text-ink">In use</span>}
                       </div>
-                    ))}
-                    <button onClick={onPairAnother} className="w-full rounded-2xl border border-dashed border-line-strong py-3 text-[14px] text-dim">
-                      + Pair another computer
-                    </button>
-                  </div>
-
-                  <div className="divide-y divide-line rounded-2xl border border-line">
-                    <label className="flex items-center justify-between px-4 py-3.5">
-                      <span className="text-[14.5px]">Speak replies</span>
-                      <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} className="h-5 w-5 accent-[#f2b46d]" />
-                    </label>
-                    <Row k="Speech-to-text" v={health?.gnani_configured ? `Gnani Prisma ${health.stt_model.replace("prisma-", "v")}` : "Not configured on server"} />
-                    <Row k="Text-to-speech" v={health?.gnani_configured ? `Gnani Timbre ${health.tts_model.replace("timbre-", "v")}` : "Not configured on server"} />
-                    <Row k="Planner" v={health?.planner ?? "—"} />
-                    <Row k="Approvals" v={health?.approval_mode === "strict" ? "Every action" : "Processes & file writes"} />
-                  </div>
-
-                  <button onClick={onSignOut} className="w-full rounded-2xl border border-line py-3 text-[14px] text-bad">Sign out this phone</button>
-                </div>
-              ) : (
-                <div className="pt-2">
-                  {events === null && <p className="py-8 text-center text-[13px] text-dim">Loading…</p>}
-                  {events?.length === 0 && <p className="py-8 text-center text-[13px] text-dim">No activity yet.</p>}
-                  <ol className="space-y-1">
-                    {events?.map((e, i) => (
-                      <li key={i} className="flex gap-3 border-b border-line py-2 text-[12.5px]">
-                        <span className="w-14 shrink-0 font-mono text-mute">{new Date(e.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className={e.detail?.ok === false || e.event.includes("blocked") ? "text-bad" : "text-fg"}>{e.event}</span>
-                          {e.detail?.tool && <span className="ml-1.5 font-mono text-dim">{e.detail.tool}</span>}
-                          {e.detail?.error && <span className="block truncate text-bad/80">{e.detail.error}</span>}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
+                      <div className="mt-3 flex items-center justify-between">
+                        {d.id !== currentId ? (
+                          <button onClick={() => onChoose(d.id)} className="border border-rule-strong px-3 py-2 text-[15px] font-semibold">
+                            Use this Mac
+                          </button>
+                        ) : <span />}
+                        {confirm === d.id ? (
+                          <span className="flex items-center gap-3 text-[15px]">
+                            <span className="text-mist">Remove its access?</span>
+                            <button onClick={() => setConfirm(null)} className="px-2 py-2 text-mist">Keep</button>
+                            <button onClick={() => { onRevoke(d.id); setConfirm(null); }} className="bg-fault px-3 py-2 font-semibold text-ink">Revoke</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => setConfirm(d.id)} className="px-2 py-2 text-[15px] text-fault">Revoke</button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <button onClick={onPairAnother} className="mt-4 w-full border border-dashed border-rule-strong py-3.5 text-[15px] font-semibold text-mist">
+                Pair another Mac
+              </button>
+              <button onClick={onSignOut} className="mt-6 w-full py-2 text-[15px] text-fault">Sign out this phone</button>
             </div>
-          </motion.section>
-        </>
-      )}
-    </AnimatePresence>
-  );
-}
+          )}
 
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3.5 text-[14.5px]">
-      <span>{k}</span><span className="text-[13.5px] text-dim">{v}</span>
-    </div>
+          {tab === "activity" && (
+            <div className="pt-2">
+              {events === null && <p className="py-8 text-[15px] text-mist">Loading activity…</p>}
+              {events?.length === 0 && <p className="py-8 text-[15px] text-mist">Nothing has run yet.</p>}
+              <ol>
+                {events?.map((e, i) => (
+                  <li key={i} className="grid grid-cols-[52px_1fr] gap-3 border-b border-rule py-2.5 text-[15px]">
+                    <span className="text-haze">{new Date(e.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="min-w-0">
+                      <span className={e.detail?.ok === false || e.event.includes("blocked") ? "text-fault" : ""}>{e.event}</span>
+                      {e.detail?.tool && <span className="ml-1.5 font-mono text-[14px] text-mist">{e.detail.tool}</span>}
+                      {e.detail?.error && <span className="block truncate text-fault/80">{e.detail.error}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {tab === "about" && (
+            <div className="pt-2">
+              <label className="flex items-center justify-between border-b border-rule py-4">
+                <span className="text-[15px]">Speak replies</span>
+                <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} className="h-5 w-5" />
+              </label>
+              <dl className="text-[15px]">
+                {[
+                  ["Speech recognition", health?.gnani_configured ? `Gnani Prisma ${health.stt_model.replace("prisma-", "v")}` : "Not configured on the server"],
+                  ["Spoken replies", health?.gnani_configured ? `Gnani Timbre ${health.tts_model.replace("timbre-", "v")}` : "Not configured on the server"],
+                  ["Understanding", health?.planner?.replace("openai-compat:", "") ?? "—"],
+                  ["Asks before", health?.approval_mode === "strict" ? "every action" : "processes, file writes, power and terminal"],
+                ].map(([k, v]) => (
+                  <div key={k} className="grid grid-cols-[140px_1fr] gap-3 border-b border-rule py-3">
+                    <dt className="text-haze">{k}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-5 text-[15px] leading-snug text-haze">Perry · One assistant. Any phone. Any computer.</p>
+            </div>
+          )}
+        </div>
+      </section>
+    </>
   );
 }
