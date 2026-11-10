@@ -20,12 +20,16 @@ server = [
 ]
 agent = [
   "websockets>=13",
-  "qrcode>=7.4",
+  "qrcode[pil]>=7.4",
+]
+menubar = [
+  "rumps>=0.4.0; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
 perry-server = "perry_server.main:run"
 perry-agent = "perry_agent.cli:main"
+perry-menubar = "perry_agent.menubar:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]

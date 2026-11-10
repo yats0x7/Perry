@@ -73,6 +73,9 @@ class DesktopLink:
         self.procs = ProcessManager()
         self.registry = build_registry(cfg, os_, self.procs)
         self.running: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
+        # Live status for front-ends (the menu-bar app) and a local kill switch.
+        self.status: dict = {"state": "connecting", "name": None, "last": None, "error": None}
+        self.paused = False
 
     @property
     def ws_url(self) -> str:
@@ -89,9 +92,11 @@ class DesktopLink:
                 except Revoked:
                     log.error("This desktop was revoked from the phone. Credentials removed; pair again.")
                     clear_credentials()
+                    self.status.update(state="revoked")
                     return
                 except (OSError, websockets.ConnectionClosed, websockets.InvalidStatus, asyncio.TimeoutError) as e:
                     log.warning("connection lost: %s", e)
+                    self.status.update(state="offline", error=str(e)[:120])
                 if time.monotonic() - started > 30:
                     backoff = 1.0
                 delay = backoff * (0.7 + random.random() * 0.6)
@@ -114,6 +119,7 @@ class DesktopLink:
                 raise Revoked()
             if welcome.get("type") != "welcome":
                 raise OSError(f"server refused connection: {welcome.get('message', welcome)}")
+            self.status.update(state="online", name=welcome.get("name"), error=None)
             log.info("online as '%s' (%s) · %d tools · %d projects",
                      welcome.get("name"), welcome.get("desktop_id"), len(manifest.tools), len(manifest.projects))
             send_lock = asyncio.Lock()
@@ -154,9 +160,13 @@ class DesktopLink:
         audit({"ts": time.time(), "event": "tool.start", "task_id": call.task_id, "call_id": call.call_id,
                "tool": call.tool, "args": call.args, "approved": call.approved})
         try:
-            result = await self.registry.execute(call, ToolContext(progress=progress, cancelled=cancelled))
+            if self.paused:
+                result = ToolResult(call_id=call.call_id, ok=False, error="Perry is paused on this Mac.")
+            else:
+                result = await self.registry.execute(call, ToolContext(progress=progress, cancelled=cancelled))
         except asyncio.CancelledError:
             result = ToolResult(call_id=call.call_id, ok=False, error="Cancelled.")
+        self.status["last"] = (call.tool, result.ok, time.time())
         audit({"ts": time.time(), "event": "tool.end", "call_id": call.call_id, "ok": result.ok,
                "error": result.error, "duration_ms": result.duration_ms})
         log.info("%s %s (%dms)%s", "✓" if result.ok else "✗", call.tool, result.duration_ms,

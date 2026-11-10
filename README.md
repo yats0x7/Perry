@@ -57,7 +57,7 @@ On the Mac you want to control:
 uv run perry-agent projects add Dineo ~/code/dineo --alias dino   # tell Perry about your projects
 uv run perry-agent pair --server https://<random>.trycloudflare.com
 # scan the QR with your phone, check the 2-digit number matches, press y
-uv run perry-agent run
+uv run perry-agent run        # or: uv run perry-menubar  (same agent with a menu-bar icon: status, pause, pairing)
 ```
 
 Open the same URL on your phone, tap the orb and speak. Add to Home Screen to install it.
@@ -72,7 +72,7 @@ platform that can't hold WebSockets. Set `PUBLIC_URL` so pairing QR codes point 
 ## Tests
 
 ```bash
-uv run pytest -q                                   # 96 tests: planner, policy, agent guards, pairing, WS loop
+uv run pytest -q                                   # 150+ tests: planner, policy, agent guards, pairing, WS loop
 uv run python scripts/planner_bench.py rules hybrid:gpt-5.4-mini   # planner accuracy on real transcripts
 uv run python scripts/e2e_headless.py --server …   # full live loop as a fake phone (needs a paired agent)
 node scripts/ui_check.mjs http://localhost:8787 <token> "<command>" out/ui   # phone-size screenshots
