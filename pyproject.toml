@@ -1,0 +1,43 @@
+[project]
+name = "perry"
+version = "0.1.0"
+description = "Perry — phone-to-desktop, Hinglish voice-first computer agent powered by Gnani Prisma & Timbre"
+requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+dependencies = [
+  "pydantic>=2.7",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+server = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9",
+  "jsonschema>=4.22",
+  "pydantic-settings>=2.3",
+]
+agent = [
+  "websockets>=13",
+  "qrcode>=7.4",
+]
+
+[project.scripts]
+perry-server = "perry_server.main:run"
+perry-agent = "perry_agent.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/perry_protocol", "src/perry_server", "src/perry_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
