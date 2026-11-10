@@ -27,6 +27,7 @@ class SpeechEntry:
     language: str
     created: float
     audio: bytes | None = None
+    desktop_id: str | None = None
 
 
 class SpeechService:
@@ -47,13 +48,14 @@ class SpeechService:
     def verify(self, sid: str, exp: int, sig: str) -> bool:
         return exp > time.time() and hmac.compare_digest(self._sig(sid, exp), sig) and sid in self.entries
 
-    def prepare(self, text: str, style: str) -> dict:
+    def prepare(self, text: str, style: str, desktop_id: str | None = None) -> dict:
         if not self.gnani.configured:
             return {"status": "unavailable", "reason": "GNANI_API_KEY is not configured on the server."}
         self._gc()
         voice, lang = self.voice_for(style)
         sid = uuid.uuid4().hex
-        self.entries[sid] = SpeechEntry(text=text[:1500], voice=voice, language=lang, created=time.time())
+        self.entries[sid] = SpeechEntry(text=text[:1500], voice=voice, language=lang, created=time.time(),
+                                        desktop_id=desktop_id)
         exp = int(time.time()) + URL_TTL_S
         return {"status": "ready", "url": f"/api/speech/{sid}?exp={exp}&sig={self._sig(sid, exp)}",
                 "voice": voice, "language": lang, "model": self.gnani.tts_model}

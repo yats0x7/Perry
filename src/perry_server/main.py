@@ -250,6 +250,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if conn:
             for p in conn.manifest.projects:
                 bias += [p.name, *p.aliases]
+        if conn:
+            await state.hub.notify_desktop(conn.desktop_id, {"type": "task.state", "status": "listening"})
         try:
             t = await state.gnani.transcribe(data, audio.filename or "command.wav", language, bias)
         except GnaniError as e:
@@ -264,6 +266,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not state.speech.verify(sid, exp, sig):
             raise HTTPException(403, "Audio link expired.")
         gen = state.speech.stream(sid)
+        entry = state.speech.entries.get(sid)
+        if entry and entry.desktop_id:
+            await state.hub.notify_desktop(entry.desktop_id, {"type": "task.state", "status": "speaking",
+                                                              "reply": entry.text[:240]})
         try:
             first = await gen.__anext__()
         except GnaniError as e:

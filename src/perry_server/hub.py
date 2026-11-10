@@ -98,6 +98,16 @@ class Hub:
                 fut.set_result(ToolResult(call_id=call_id, ok=False, error=reason))
         conn.pending.clear()
 
+    async def notify_desktop(self, desktop_id: str | None, obj: dict) -> None:
+        """Fire-and-forget status for the desktop (its pet / menu bar). Never fails a task."""
+        conn = self.desktops.get(desktop_id or "")
+        if conn is None:
+            return
+        try:
+            await conn.send(obj)
+        except Exception:  # noqa: BLE001
+            pass
+
     async def call_tool(self, desktop_id: str, call: ToolCall,
                         on_progress: Callable[[str], Awaitable[None]] | None = None) -> ToolResult:
         conn = self.desktops.get(desktop_id)

@@ -101,8 +101,14 @@ def test_full_task_loop_with_approval_and_revocation(client):
             phone.send_text(json.dumps({"type": "approve", "task_id": task["id"], "digest": "bogus"}))
             assert "changed" in json.loads(phone.receive_text())["message"]
             phone.send_text(json.dumps({"type": "approve", "task_id": task["id"], "digest": task["plan_digest"]}))
+            def next_call():
+                while True:  # the desktop also receives task.state updates for its pet/menu bar
+                    m = json.loads(desk.receive_text())
+                    if m["type"] != "task.state":
+                        return m
+
             for expected_tool, approved in (("git.status", False), ("dev.start_server", True)):
-                call = json.loads(desk.receive_text())
+                call = next_call()
                 assert call["type"] == "tool.call" and call["tool"] == expected_tool and call["approved"] is approved
                 desk.send_text(json.dumps({"type": "tool.result", "call_id": call["call_id"], "ok": True,
                                            "output": {"branch": "main", "clean": True, "modified": [], "staged": [], "untracked": []}
@@ -120,8 +126,7 @@ def test_full_task_loop_with_approval_and_revocation(client):
             # revoke → desktop is told and its token stops working
             r = client.delete(f"/api/desktops/{did}", headers={"Authorization": f"Bearer {tok}"}).json()
             assert r["desktop_revoked"]
-            msg = desk.receive_text()
-            assert json.loads(msg)["type"] in ("revoked", "ping")
+            assert next_call()["type"] in ("revoked", "ping")
     with client.websocket_connect("/ws/desktop") as desk:
         desk.send_text(json.dumps({"type": "hello", "token": dtok, "manifest": manifest()}))
         assert json.loads(desk.receive_text())["type"] == "revoked"

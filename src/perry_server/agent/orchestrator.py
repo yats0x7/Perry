@@ -85,6 +85,11 @@ class Orchestrator:
              task.updated_at, task.model_dump_json()),
         )
         await self.hub.send_client(task.controller_id, {"type": "task", "task": task.model_dump(mode="json")})
+        running = next((st.tool for st in (task.plan.steps if task.plan else []) if st.status == StepStatus.RUNNING), None)
+        await self.hub.notify_desktop(task.desktop_id, {
+            "type": "task.state", "status": task.status.value, "tool": running,
+            "text": task.input_text[:120], "reply": (task.response_text or "")[:240],
+        })
 
     def history(self, controller_id: str, limit: int = 30) -> list[dict]:
         rows = self.db.all("SELECT data_json FROM tasks WHERE controller_id=? ORDER BY created_at DESC LIMIT ?",
@@ -259,7 +264,7 @@ class Orchestrator:
         """Generate the reply text (from structured results) and the Timbre speech URL."""
         final = task.status
         task.response_text = compose_reply(task.plan, final, task.style, task.error)
-        task.speech = self.speech.prepare(task.response_text, task.style)
+        task.speech = self.speech.prepare(task.response_text, task.style, desktop_id=task.desktop_id)
         mem = self.memory.setdefault(task.controller_id, {"project_id": None, "history": []})
         mem["history"].append((task.input_text, task.response_text))
         mem["history"] = mem["history"][-8:]

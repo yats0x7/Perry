@@ -74,7 +74,8 @@ class DesktopLink:
         self.registry = build_registry(cfg, os_, self.procs)
         self.running: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
         # Live status for front-ends (the menu-bar app) and a local kill switch.
-        self.status: dict = {"state": "connecting", "name": None, "last": None, "error": None}
+        self.status: dict = {"state": "connecting", "name": None, "last": None, "error": None,
+                             "task": None, "running": None}
         self.paused = False
 
     @property
@@ -145,6 +146,8 @@ class DesktopLink:
                             entry[1].set()
                             # give the tool a moment to clean up, then hard-cancel
                             asyncio.get_running_loop().call_later(3, entry[0].cancel)
+                    elif kind == "task.state":
+                        self.status["task"] = {**msg, "ts": time.time()}
                     elif kind == "revoked":
                         raise Revoked()
             finally:
@@ -159,6 +162,7 @@ class DesktopLink:
 
         audit({"ts": time.time(), "event": "tool.start", "task_id": call.task_id, "call_id": call.call_id,
                "tool": call.tool, "args": call.args, "approved": call.approved})
+        self.status["running"] = call.tool
         try:
             if self.paused:
                 result = ToolResult(call_id=call.call_id, ok=False, error="Perry is paused on this Mac.")
@@ -167,6 +171,7 @@ class DesktopLink:
         except asyncio.CancelledError:
             result = ToolResult(call_id=call.call_id, ok=False, error="Cancelled.")
         self.status["last"] = (call.tool, result.ok, time.time())
+        self.status["running"] = None
         audit({"ts": time.time(), "event": "tool.end", "call_id": call.call_id, "ok": result.ok,
                "error": result.error, "duration_ms": result.duration_ms})
         log.info("%s %s (%dms)%s", "✓" if result.ok else "✗", call.tool, result.duration_ms,
