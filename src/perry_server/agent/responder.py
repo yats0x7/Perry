@@ -167,7 +167,8 @@ def _step_line(step: PlanStep, style: str) -> str | None:
         return (f"I opened Spotify's search for “{q}” — tap the song to play it." if en
                 else f"Spotify mein “{q}” search khol diya hai, jo gaana chahiye us pe play dabao.")
     if t == "browser.search":
-        site = (o.get("site") or "web").title().replace("Youtube", "YouTube").replace("Github", "GitHub")
+        raw = o.get("site") or "web"
+        site = raw if "." in raw else raw.title().replace("Youtube", "YouTube").replace("Github", "GitHub")
         if o.get("played"):
             return (f"Playing “{o['played'][:70]}” on YouTube." if en else f"YouTube pe “{o['played'][:70]}” chala diya.")
         base = (f"Searched {site} for “{o.get('query')}”" if en else f"{site} pe “{o.get('query')}” search kar diya")
@@ -214,7 +215,7 @@ def _step_line(step: PlanStep, style: str) -> str | None:
         b = o.get("battery") or {}
         parts_en, parts_hi = [], []
         if b.get("present"):
-            charging = "charging" in (b.get("state") or "") or b.get("source") == "AC Power"
+            charging = (b.get("state") or "").strip() in ("charging", "charged", "finishing charge") or b.get("source") == "AC Power"
             parts_en.append(f"battery is at {b.get('percent')}%{' and charging' if charging else ''}")
             parts_hi.append(f"battery {b.get('percent')}% hai{', charge ho rahi hai' if charging else ''}")
         if o.get("volume") is not None:
@@ -263,8 +264,12 @@ def _step_line(step: PlanStep, style: str) -> str | None:
             return "Started it in the background." if en else "Command background mein chala diya."
         if code is None:
             return "The command timed out." if en else "Command time out ho gaya."
+        first = next((ln.strip() for ln in (o.get("output") or "").splitlines() if ln.strip()), "")
+        first = re.sub(r"\s+", " ", first)[:110]
         if code == 0:
-            return ("Done — the output is on your screen." if en else "Command chal gaya, output screen pe hai.")
+            if first:
+                return ("Done. The output is open above." if en else "Command chal gaya. Output upar khula hai.")
+            return "Done, with no output." if en else "Command chal gaya, koi output nahi aaya."
         return (f"The command failed with exit code {code}; the output is on your screen." if en
                 else f"Command fail hua, exit code {code}. Output screen pe hai.")
     if t == "system.notify":
@@ -275,7 +280,7 @@ def _step_line(step: PlanStep, style: str) -> str | None:
 def compose_reply(plan: Plan | None, status: TaskStatus, style: str, error: str | None = None) -> str:
     en = style == "english"
     if status == TaskStatus.REJECTED:
-        return "Okay, I didn't run anything." if en else "Theek hai, maine kuch nahi chalaya."
+        return "Okay. Nothing was run." if en else "Theek hai, maine kuch nahi chalaya."
     if status == TaskStatus.CANCELLED:
         done = [s for s in (plan.steps if plan else []) if s.status == StepStatus.SUCCEEDED]
         return ("Stopped. " if en else "Task rok diya. ") + (" ".join(filter(None, (_step_line(s, style) for s in done))))
@@ -290,7 +295,5 @@ def compose_reply(plan: Plan | None, status: TaskStatus, style: str, error: str 
                      else f"Baaki {len(skipped)} steps skip kar diye.")
     if not lines:
         return "Done." if en else "Ho gaya."
-    did_something = any(s.risk.value != "read" and not (s.tool == "media.control" and s.args.get("action") == "status")
-                        for s in plan.steps)
-    opener = "" if en or not did_something else ("Ho gaya! " if all(s.status == StepStatus.SUCCEEDED for s in plan.steps) else "")
+    opener = ""  # calm operator: state what happened, no celebration
     return opener + " ".join(lines)

@@ -121,6 +121,9 @@ on run argv
         make new tab at end of tabs of w with properties {{URL:arg}}
       end if
       activate
+    else if act is "navigate" then
+      set URL of active tab of w to arg
+      activate
     else if act is "close_tab" then
       set extra to title of active tab of w
       close active tab of w
@@ -224,6 +227,9 @@ on run argv
         set nt to make new tab at end of tabs of w with properties {URL:arg}
       end if
       set current tab of w to nt
+      activate
+    else if act is "navigate" then
+      set URL of current tab of w to arg
       activate
     else if act is "close_tab" then
       try

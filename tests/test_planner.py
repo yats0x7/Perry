@@ -250,3 +250,23 @@ async def test_mac_controls(text, tool, args, manifest):
 async def test_server_stop_does_not_touch_spotify_mute(manifest):
     p = await plan("spotify mute karo", manifest)
     assert [s.tool for s in p.steps] != ["system.control"]
+
+
+@pytest.mark.parametrize("text,args", [
+    ("open github and search fastapi websockets", {"query": "fastapi websockets", "site": "github"}),
+    ("GitHub kholo aur fastapi search karo", {"query": "fastapi", "site": "github"}),
+    ("open youtube, search kesariya and play it", {"query": "kesariya", "site": "youtube", "play_first": True}),
+    ("YouTube kholo, lofi beats search karo aur pehla video chalao", {"query": "lofi beats", "site": "youtube", "play_first": True}),
+    ("open youtube and search arijit singh", {"query": "arijit singh", "site": "youtube"}),
+    ("Chrome mein amazon kholo aur wireless mouse search karo", {"query": "wireless mouse", "site": "amazon", "browser": "Google Chrome"}),
+    ("is page pe react hooks search karo", {"query": "react hooks", "site": "current"}),
+    ("search lofi here", {"query": "lofi", "site": "current"}),
+])
+async def test_open_site_then_search(text, args, manifest):
+    p = await plan(text, manifest)
+    assert [(s.tool, s.args) for s in p.steps] == [("browser.search", args)]
+
+
+async def test_real_prisma_search_here(manifest):
+    p = await plan("iss page per lofi search karo", manifest)  # real Prisma output for "is page pe lofi search karo"
+    assert [(s.tool, s.args) for s in p.steps] == [("browser.search", {"query": "lofi", "site": "current"})]

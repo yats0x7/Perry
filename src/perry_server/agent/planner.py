@@ -100,10 +100,21 @@ B_SWITCH = [
 B_READ = re.compile(r"\b(page|website|site|tab|article)\b.*\b(padho|read|kya likha|kya hai|summary|summarise|summarize|title|dikhao)\b|"
                     r"\b(read|padho)\b.*\b(page|website|article|tab)\b", re.I)
 B_VIDEO = W("video", "youtube", "you tube", "reel")
+CURRENT_SITE = re.compile(r"\b(yahan|yaha|isi|isme|is (page|site|tab|website)|iss (page|site|tab|website)|"
+                          r"this (page|site|tab|website)|current (tab|page|site)|same tab|here)\b", re.I)
+PLAY_IT_WORDS = {"it", "isko", "usko", "use", "wo", "woh", "pehla", "first", "video", "result", "one", "that", "ye", "yeh"}
+
+
+SEARCHABLE = {"google", "youtube", "github", "wikipedia", "amazon", "flipkart", "stackoverflow", "npm", "maps"}
+
+
+def _norm_site(raw: str) -> str:
+    site = raw.lower().replace(" ", "")
+    return {"wiki": "wikipedia", "googlemaps": "maps", "youtube": "youtube"}.get(site, site)
 SEARCH_FILLER = set("""google youtube you tube github wikipedia wiki amazon flipkart stack overflow stackoverflow npm maps
-pe par on in mein me se ka ki ke ko search karo kar do de dijiye kijiye dhundo dhoondo dhundho khojo find look up lookup
+pe par per pay on in mein me se ka ki ke ko search karo kar do de dijiye kijiye dhundo dhoondo dhundho khojo find look up lookup
 for please plz zara perry mera meri mere my the a chrome brave safari edge firefox browser bajao baja play chalao chala
-lagao laga sunao suna video videos dikhao open kholo khol""".split())
+lagao laga sunao suna video videos dikhao open kholo khol karke kar ke and aur then phir""".split())
 BROWSER_ALIASES = {"chrome": "Google Chrome", "google chrome": "Google Chrome", "brave": "Brave Browser",
                    "safari": "Safari", "edge": "Microsoft Edge", "vivaldi": "Vivaldi", "firefox": "Firefox", "arc": "Arc"}
 BROWSER_NAMES = {"Safari", "Google Chrome", "Brave Browser", "Arc", "Firefox", "Microsoft Edge", "Opera", "Vivaldi"}
@@ -119,6 +130,8 @@ KNOWN_SITES = {
     "vercel": "https://vercel.com", "netflix": "https://www.netflix.com", "instagram": "https://www.instagram.com",
     "whatsapp web": "https://web.whatsapp.com", "gnani": "https://www.gnani.ai",
     "chatgpt": "https://chatgpt.com", "gmail": "https://mail.google.com", "linkedin": "https://www.linkedin.com",
+    "amazon": "https://www.amazon.in", "flipkart": "https://www.flipkart.com", "wikipedia": "https://www.wikipedia.org",
+    "npm": "https://www.npmjs.com", "maps": "https://maps.google.com",
 }
 APP_ALIASES = {"brave browser": "Brave Browser", "edge": "Microsoft Edge", "apple music": "Music", "chrome": "Google Chrome", "vs code": "Visual Studio Code", "vscode": "Visual Studio Code",
                "visual studio code": "Visual Studio Code", "brave": "Brave Browser", "iterm": "iTerm",
@@ -428,24 +441,42 @@ class RulePlanner(Planner):
             site_m = SEARCH_SITE.search(low)
             wants_play = bool(M_PLAY.search(low)) and not M_PAUSE.search(low)
             if site_m:
-                browser_ctx["site"] = site_m.group(1).lower().replace(" ", "")
-            # "open youtube and play kesariya": the 2nd clause inherits YouTube
-            if not site_m and browser_ctx["site"] == "youtube" and MUSIC_VERB.search(low) and not MEDIA_NOUN.search(low):
-                words = [w for w in re.findall(r"[\w'&.+#-]+", clause) if w.lower() not in SEARCH_FILLER]
-                if words:
-                    q = " ".join(words)
-                    steps[:] = [st for st in steps if not (st.tool == "url.open" and "youtube.com" in st.args.get("url", "")
-                                                            and "/results" not in st.args.get("url", ""))]
-                    add("browser.search", {"query": q, "site": "youtube", "play_first": True, **bargs},
-                        f"Play “{q}” on YouTube" + (f" in {bname}" if bargs else ""))
+                browser_ctx["site"] = _norm_site(site_m.group(1))
+            ctx_site = browser_ctx["site"]
+            words_q = [w for w in re.findall(r"[\w'&.+#-]+", clause) if w.lower() not in SEARCH_FILLER]
+            # "...search kesariya and play it": attach "play it" to the YouTube search just planned
+            if (MUSIC_VERB.search(low) or M_PLAY.search(low)) and steps and steps[-1].tool == "browser.search" \
+                    and steps[-1].args.get("site") == "youtube" and all(w.lower() in PLAY_IT_WORDS for w in words_q):
+                steps[-1].args["play_first"] = True
+                steps[-1].reason = f"Play “{steps[-1].args['query']}” on YouTube"
+                continue
+            # "search X here / in this tab": the site that is open right now, same tab
+            if CURRENT_SITE.search(low) and SEARCH_VERB.search(low) and not site_m:
+                q = " ".join(w for w in words_q if not CURRENT_SITE.search(w.lower()) and w.lower() not in
+                             {"yahan", "yaha", "isi", "isme", "is", "iss", "this", "page", "site", "tab", "website", "current", "same", "here"})
+                if q:
+                    add("browser.search", {"query": q, "site": "current", **bargs},
+                        f"Search “{q}” on the open site" + (f" in {bname}" if bargs else ""))
                     continue
+            # "open github and search fastapi" / "open youtube and play kesariya": later clauses inherit the site
+            if not site_m and ctx_site and words_q and not MEDIA_NOUN.search(low) and not CURRENT_SITE.search(low) \
+                    and (SEARCH_VERB.search(low) or (ctx_site == "youtube" and MUSIC_VERB.search(low))):
+                q = " ".join(words_q)
+                home = KNOWN_SITES.get(ctx_site, "")
+                steps[:] = [st for st in steps if not (st.tool == "url.open" and home
+                                                        and st.args.get("url", "").rstrip("/") == home.rstrip("/"))]
+                play = ctx_site == "youtube" and bool(MUSIC_VERB.search(low))
+                site_key = ctx_site if ctx_site in SEARCHABLE else "google"
+                add("browser.search", {"query": q, "site": site_key, **({"play_first": True} if play else {}), **bargs},
+                    f"{'Play' if play else 'Search'} “{q}” on {site_key.title().replace('Youtube', 'YouTube').replace('Github', 'GitHub')}"
+                    + (f" in {bname}" if bargs else ""))
+                continue
             controlling = bool(M_PAUSE.search(low) or re.search(r"\b(resume|continue|dobara)\b", low))
             if site_m and not controlling and (SEARCH_VERB.search(low) or wants_play or re.search(r"\b(dikhao|videos?)\b", low)):
                 words = [w for w in re.findall(r"[\w'&.+#-]+", clause) if w.lower() not in SEARCH_FILLER]
                 query = " ".join(words).strip()
                 if query:
-                    site = site_m.group(1).lower().replace(" ", "")
-                    site = {"youtube": "youtube", "wiki": "wikipedia", "googlemaps": "maps"}.get(site, site)
+                    site = _norm_site(site_m.group(1))
                     play = site == "youtube" and wants_play
                     add("browser.search", {"query": query, "site": site, **({"play_first": True} if play else {}), **bargs},
                         f"{'Play' if play else 'Search'} “{query}” on {site.title()}" + (f" in {bname}" if bargs else ""))
@@ -645,8 +676,8 @@ class RulePlanner(Planner):
             return plan
         if not steps:
             plan.reply_without_action = (
-                "Sorry, ye command main abhi samajh nahi paaya. Aap bol sakte ho jaise: "
-                "“Dineo project kholo”, “git status check karo”, “dev server start karo”, “Chrome kholo”."
+                "Ye command samajh nahi aaya. Aise bol sakte ho: “Dineo project kholo”, “git status check karo”, "
+                "“Chrome mein YouTube kholo”, “battery kitni hai”."
             )
             plan.understanding = "No supported action recognised."
             return plan

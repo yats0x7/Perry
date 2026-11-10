@@ -217,10 +217,17 @@ class BrowserOut(BaseModel):
     url: str | None = None
 
 
+SITE_DOMAINS = {"github.com": "github", "youtube.com": "youtube", "wikipedia.org": "wikipedia", "amazon.": "amazon",
+                "flipkart.com": "flipkart", "stackoverflow.com": "stackoverflow", "npmjs.com": "npm",
+                "google.": "google"}
+
+
 class BrowserSearchIn(BrowserIn):
     query: str = Field(min_length=1, max_length=200)
-    site: Literal["google", "youtube", "github", "wikipedia", "amazon", "flipkart", "stackoverflow", "npm", "maps"] = "google"
+    site: Literal["google", "youtube", "github", "wikipedia", "amazon", "flipkart", "stackoverflow", "npm", "maps",
+                  "current"] = "google"
     play_first: bool = Field(False, description="YouTube only: start the first result")
+    same_tab: bool = Field(False, description="Search in the current tab instead of a new one")
 
 
 class BrowserSearchOut(BaseModel):
@@ -861,20 +868,36 @@ def build_registry(cfg: AgentConfig, os_: PlatformAdapter, procs: ProcessManager
     async def browser_search(a: BrowserSearchIn, ctx: ToolContext):
         from urllib.parse import quote_plus
 
-        url = SEARCH_SITES[a.site].format(q=quote_plus(a.query.strip()))
+        from urllib.parse import urlparse
+
+        site = a.site
         b = None
         if a.browser:
             b = installed_app(a.browser)
             if b not in BROWSERS:
                 raise ToolError(f"{b} is not a web browser.")
-        elif a.play_first:
-            b = pick_browser(None, must_run=False)
-        if b in SCRIPTABLE_BROWSERS:
-            await run_browser(b, "new_tab", url)
+        elif a.play_first or site == "current" or a.same_tab:
+            b = pick_browser(None, must_run=site == "current")
+        q = quote_plus(a.query.strip())
+        if site == "current":
+            # search the site that is open right now, with its own search where Perry knows it
+            if b not in SCRIPTABLE_BROWSERS:
+                raise ToolError("Searching the open page works in Chrome, Brave, Edge, Vivaldi and Safari.")
+            cur = await run_browser(b, "focus")
+            host = (urlparse(cur.get("url") or "").hostname or "").removeprefix("www.")
+            site = next((k for dom, k in SITE_DOMAINS.items() if dom in host), "")
+            url = SEARCH_SITES[site].format(q=q) if site else \
+                f"https://www.google.com/search?q={q}+site%3A{host}" if host else SEARCH_SITES["google"].format(q=q)
+            site = site or (host or "google")
+            await run_browser(b, "navigate", url)
         else:
-            await asyncio.to_thread(os_.open_url, url, b)
+            url = SEARCH_SITES[site].format(q=q)
+            if b in SCRIPTABLE_BROWSERS:
+                await run_browser(b, "navigate" if a.same_tab else "new_tab", url)
+            else:
+                await asyncio.to_thread(os_.open_url, url, b)
         played = note = None
-        if a.play_first and a.site == "youtube":
+        if a.play_first and site == "youtube":
             if b not in SCRIPTABLE_BROWSERS:
                 note = "Results are open; this browser can't be scripted to start the first video."
             else:
@@ -891,7 +914,7 @@ def build_registry(cfg: AgentConfig, os_: PlatformAdapter, procs: ProcessManager
                         break
                 else:
                     note = "Results are open, but no video link appeared in time."
-        return BrowserSearchOut(browser=b, site=a.site, query=a.query.strip(), url=url, played=played, note=note)
+        return BrowserSearchOut(browser=b, site=site, query=a.query.strip(), url=url, played=played, note=note)
 
     @reg.tool("browser.media", title="Play/pause page video", risk=Risk.LOW, input_model=BrowserMediaIn,
               output_model=BrowserMediaOut,

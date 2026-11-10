@@ -108,3 +108,14 @@ def test_ordinary_commands_need_approval(cmd, manifest):
 def test_power_needs_approval_controls_do_not(manifest):
     plan = PolicyEngine().review(p(("system.power", {"action": "lock"}), ("system.control", {"action": "volume_up"})), manifest)
     assert [s.requires_approval for s in plan.steps] == [True, False]
+
+
+def test_battery_reply_does_not_call_discharging_charging():
+    from perry_protocol import PlanStep
+    from perry_server.agent.responder import _step_line
+
+    out = {"battery": {"present": True, "percent": 41, "state": "discharging", "source": "Battery Power"}, "volume": 50, "muted": False}
+    line = _step_line(PlanStep(id="s", tool="system.status", status="succeeded", output=out), "hinglish")
+    assert "41%" in line and "charge ho rahi" not in line
+    out["battery"].update(state="charging", source="AC Power")
+    assert "charge ho rahi" in _step_line(PlanStep(id="s", tool="system.status", status="succeeded", output=out), "hinglish")
