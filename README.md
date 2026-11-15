@@ -4,6 +4,8 @@
 
 **One assistant. Any phone. Any computer.**
 
+One-page pitch: [PDF](docs/Perry-pitch.pdf) · [Markdown](docs/PITCH.md)
+
 Speak to your computer from whatever phone you already own (Android or iPhone, no app store) in Hinglish,
 Hindi or English. Perry turns the command into a plan, asks before it runs anything consequential,
 carries it out on your computer, and answers you out loud.
